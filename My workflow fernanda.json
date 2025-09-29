@@ -1,0 +1,748 @@
+{
+  "name": "My workflow fernanda",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        880,
+        672
+      ],
+      "id": "a5b97601-6ea1-4df4-a1d0-1084d5b83602",
+      "name": "Google Gemini Chat Model1",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "TJm873ez10p4CoVy",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $fromAI('query') }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.6,
+      "position": [
+        1456,
+        576
+      ],
+      "id": "bbf7cb0a-6ad6-4bc0-a995-a4f3aadb6883",
+      "name": "Execute a SQL query in Postgres",
+      "credentials": {
+        "postgres": {
+          "id": "nv8MfQe0MZBRYPGQ",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Pergunta do usuário: {{ ($('Code in JavaScript1').isExecuted ? $('Code in JavaScript1').item.json.cleanedText : $node[\"Telegram Trigger\"].json.message.text )|| $node['Telegram Trigger'].json.message.caption}}",
+        "options": {
+          "systemMessage": "=Você é um assistente de relatórios de dados conectado a dois agentes:\n- **Agente Banco de Dados**: usado para buscar informações na tabela `usuario_{{ $('Telegram Trigger').item.json.message.chat.id }}`.  \n- **Agente Quickchart**: usado para gerar gráficos em formato JSON compatível com Chart.js.  \n\nSua tarefa é receber a pergunta do usuário e:\n1. Consultar o **Agente Banco de Dados** quando precisar de dados. Sempre utilize a tabela  `usuario_{{ $('Telegram Trigger').item.json.message.chat.id }}`\n2. Se o usuário pedir um **gráfico**, primeiro obtenha os dados com o Agente Banco de Dados e depois envie-os ao Agente Quickchart.\n3. Sempre verifique antes no **Agente Banco de Dados** antes de responder a pergunta do usuario.\n5. Não Formule texto com mais de 4000 caracteres.\n\n\nRegras obrigatórias:\n- Sempre responda com **um único objeto JSON válido**.  \n- Estrutura de resposta:\n  - Campo `\"texto\"`: explicação em linguagem natural utilizando o MarkdownV2.  \n  - Campo `\"grafico\"`:\n    - `\"exist\": true` → incluir objeto `\"json\"` no formato Chart.js (apenas se o usuário pedir gráfico).  \n    - `\"exist\": false` → não incluir `\"json\"`.  \n- Nunca inclua explicações fora do JSON.  \n- Nunca exponha nomes de tabelas nem o `chatId` ao usuário.\n- Nunco utilizae negrito (**texto**) ou itálico.\n\n- Se não houver dados disponíveis, responda:\n```json\n{\n  \"texto\": \"Não há informações disponíveis.\",\n  \"grafico\": { \"exist\": false }\n}\n````\n\n**Exemplo se houver gráfico:**\n\n```json\n{\n  \"texto\": \"Evolução mensal das vendas em 2024.\",\n  \"grafico\": {\n    \"exist\": true,\n    \"json\": {\n      \"chart\": {\n        \"type\": \"bar\",\n        \"data\": {\n          \"labels\": [\"Janeiro\", \"Fevereiro\", \"Março\"],\n          \"datasets\": [{\n            \"label\": \"Vendas\",\n            \"data\": [100, 150, 120],\n            \"backgroundColor\": \"rgba(75, 192, 192, 0.6)\"\n          }]\n        },\n        \"options\": {\n          \"title\": {\n            \"display\": true,\n            \"text\": \"Vendas Mensais\"\n          }\n        }\n      }\n    }\n  }\n}\n```\n\n**Exemplo se não houver gráfico:**\n\n```json\n{\n  \"texto\": \"A média de vendas foi de 125 unidades por mês.\",\n  \"grafico\": { \"exist\": false }\n}\n```\n\n```"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        816,
+        144
+      ],
+      "id": "bbc196ad-f983-4b1f-88c3-dde64c3437ae",
+      "name": "AI Agent1",
+      "executeOnce": true,
+      "retryOnFail": false
+    },
+    {
+      "parameters": {
+        "text": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Prompt__User_Message_', ``, 'string') }}",
+        "options": {
+          "systemMessage": "=### 🔸 Regras obrigatórias\n\n1. **Consulta do schema**\n\n   * Antes de responder qualquer pergunta, consulte **as colunas existentes**:\n\n   ```sql\n  SELECT \"column_name\", \"data_type\", \"is_nullable\"\n  FROM information_schema.columns \n  WHERE table_name = 'usuario_{{ $('Telegram Trigger').item.json.message.chat.id }}' \n  ORDER BY ordinal_position;\n   ```\n\n   * Use **somente essas colunas** em suas queries.\n   * Se o usuário pedir algo que não existe, responda:\n\n     ```\n     Não tenho informações suficientes para criar essa query.\n     ```\n   * Se não existir a tabela usuario_{{ $('Telegram Trigger').item.json.message.chat.id }} responda:\n\n     ```\n     A tabela não foi encontrada por favor envie um arquivo .csv ou um link do google drive com o csv.\n     ```\n\n2. **Execução segura de queries**\n\n   * **Sempre envie apenas a query SQL limpa** para a tool do Postgres.\n   * **Não coloque a query dentro de JSON ou campos extras.**\n   * Use `LIMIT 100` ou outro valor seguro **dentro da query SQL**, não em parâmetros externos.\n   * Evite puxar toda a tabela se ela for grande.\n\n3. **Tipos de análises permitidas**\n\n   * Estatísticas descritivas: média, mediana, mínimo, máximo, desvio padrão, variância.\n   * Distribuições: frequência de valores (`GROUP BY`).\n   * Padrões e tendências: valores mais frequentes, agrupamentos.\n   * Outliers: via IQR (1.5 * IQR).\n   * Relações entre variáveis: correlação entre colunas numéricas.\n\n4. **Formato da resposta**\n\n   * Query SQL **em bloco de código**.\n   * Resultados **reais** retornados pela tool Postgres. \n   * É obrigatório retornar tanto a SQL quanto os resultados **reais** da execução da query.\n5. **Execução obrigatória**\n\n   * **Sempre execute a query na tool Postgres** antes de retornar qualquer resultado.\n   * Nunca assuma resultados ou invente valores.\n\n---\n\n### 🔸 Exemplos de comportamento\n\n**Usuário:** \"Quais colunas existem na tabela {{ 'usuario_' + $('Telegram Trigger').item.json.message.chat.id }}?\"\n\nAgente:\n\"Essas são as colunas disponíveis na tabela {{ 'usuario_' + $('Telegram Trigger').item.json.message.chat.id }}:\"\n\n```sql\nSELECT \"column_name\", \"data_type\", \"is_nullable\"\nFROM information_schema.columns\nWHERE table_name = 'usuario_{{$('Telegram Trigger').item.json.message.chat.id }}'\nORDER BY ordinal_position;\n```\n\n*(Enviar **apenas essa query** para a tool Postgres.)*\n\n**Resultados retornados:**\n\n* id → integer (não nulo)\n* limite → numeric (pode ser nulo)\n* status → varchar (não nulo)\n\n---\n\n**Usuário:** \"Qual a média da coluna `Amount`?\"\n\nAgente:\n\n```sql\nSELECT AVG(usuario_123.\"Amount\") AS media\nFROM {{ 'usuario_' + $('Telegram Trigger').item.json.message.chat.id }};\n```\n\n*(Enviar **apenas essa query** para a tool Postgres.)*\n\n**Resultados retornados:**\n(media = 12500.32)\n\n---\n\n**Usuário:** \"Existem outliers na coluna `Amount`?\"\n\nAgente:\n\n```sql\nWITH stats AS (\n  SELECT\n    percentile_cont(0.25) WITHIN GROUP (ORDER BY usuario_{{$('Telegram Trigger').item.json.message.chat.id }}.\"Amount\") AS q1,\n    percentile_cont(0.75) WITHIN GROUP (ORDER BY usuario_{{$('Telegram Trigger').item.json.message.chat.id }}.\"Amount\") AS q3\n  FROM usuario_{{$('Telegram Trigger').item.json.message.chat.id }}\n)\nSELECT *\nFROM usuario_{{$('Telegram Trigger').item.json.message.chat.id }}, stats\nWHERE usuario_{{$('Telegram Trigger').item.json.message.chat.id }}.\"Amount\" < q1 - 1.5 * (q3 - q1)\n   OR usuario_{{$('Telegram Trigger').item.json.message.chat.id }}.\"Amount\" > q3 + 1.5 * (q3 - q1)\nLIMIT 100;\n```\n\n*(Enviar **apenas essa query** para a tool Postgres.)*\n\n**Resultados retornados:**\nNa colunas `Amount` existe 15 outliers\n\n6. **Nunca retornar**\n\n* Nunca retornar a coluna chat_id ou falar dela ela é somente para consulta interna.\n* Não falar tabela {{ 'usuario_' + $('Telegram Trigger').item.json.message.chat.id }} para o usuario. Pode suprimir essa informação para ele.\n\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agentTool",
+      "typeVersion": 2.2,
+      "position": [
+        1136,
+        368
+      ],
+      "id": "6a2b9583-1161-4b93-b1d9-82ab01ac619c",
+      "name": "Agente Banco de Dados"
+    },
+    {
+      "parameters": {
+        "text": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Prompt__User_Message_', ``, 'string') }}",
+        "options": {
+          "systemMessage": "=Você é um assistente que gera gráficos em formato JSON para o QuickChart.\nA saída deve ser **apenas um JSON válido**, sem explicações ou texto adicional.\nO JSON sempre deve começar com a chave chart.\nNão invente dados somente peça os dados necessarios caso não possa fazer o grafico\nUse sempre a seguinte estrutura:\n\n```json\n{\n  \"chart\": {\n    \"type\": \"<tipo de gráfico>\",\n    \"data\": {\n      \"labels\": [<lista de rótulos>],\n      \"datasets\": [{\n        \"label\": \"<nome do conjunto de dados>\",\n        \"data\": [<valores numéricos>],\n        \"backgroundColor\": \"<cor ou lista de cores>\"\n      }]\n    },\n    \"options\": {\n      \"title\": {\n        \"display\": true,\n        \"text\": \"<título do gráfico>\"\n      }\n    }\n  }\n}\n```\n\nExemplo de saída correta:\n\n```json\n{\n  \"chart\": {\n    \"type\": \"bar\",\n    \"data\": {\n      \"labels\": [\"Janeiro\", \"Fevereiro\", \"Março\", \"Abril\"],\n      \"datasets\": [{\n        \"label\": \"Vendas\",\n        \"data\": [10, 15, 8, 20],\n        \"backgroundColor\": \"rgba(75, 192, 192, 0.6)\"\n      }]\n    },\n    \"options\": {\n      \"title\": {\n        \"display\": true,\n        \"text\": \"Vendas Mensais\"\n      }\n    }\n  }\n}\n```\n\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agentTool",
+      "typeVersion": 2.2,
+      "position": [
+        1424,
+        368
+      ],
+      "id": "76bf901c-e495-49d4-be61-00279f15cabc",
+      "name": "Agente Quickchart"
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -752,
+        48
+      ],
+      "id": "43e1ff97-f3dc-45d0-958e-650d3e7e7413",
+      "name": "Telegram Trigger",
+      "webhookId": "4bd34754-4894-443e-a86d-c4dbd1f491a4",
+      "credentials": {
+        "telegramApi": {
+          "id": "skXcH3dVNduF0sds",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "b190fb2e-2d35-42c9-bf8d-ebf832c1a8ae",
+                    "leftValue": "={{ $('Telegram Trigger').item.json.message.text }}",
+                    "rightValue": "drive.google.com",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "92aad331-19c4-405d-aefa-79aaf98f3344",
+                    "leftValue": "={{ $('Telegram Trigger').item.json.message.text }}",
+                    "rightValue": "spreadsheets",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{$('Telegram Trigger').item.json.message.document }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "object",
+                      "operation": "notExists",
+                      "singleValue": true
+                    },
+                    "id": "62fde691-9e83-4057-a02e-6e87922206b6"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "1db766fb-e377-4242-9b43-484fb8ac5bc1",
+                    "leftValue": "={{$('Telegram Trigger').item.json.message.document }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "object",
+                      "operation": "exists",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -304,
+        32
+      ],
+      "id": "835515a4-cf1d-47be-89bf-73ab99ac3386",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "jsCode": "let text = $('Telegram Trigger').first().json.message.text || '';\nconst match = text.match(/[-\\w]{25,}/); // fileId sempre tem 25+ chars\ntext = text.replace(/https:\\/\\/drive\\.google\\.com\\/[^\\s]+/g, \"\").trim();\n// return [{ fileId: match ? match[0] : null }];\nreturn [{ json: { cleanedText: text, fileId: match ? match[0] : null } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        -256
+      ],
+      "id": "7ab2836c-4972-4d7a-8e97-2fbd846fe7ec",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "operation": "sendChatAction",
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}"
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -528,
+        48
+      ],
+      "id": "dbc2369b-24c3-4e49-8ef6-323dcd40bdc1",
+      "name": "Send a chat action",
+      "webhookId": "16b5d7f7-d777-471e-b5b1-31b95cbe066d",
+      "credentials": {
+        "telegramApi": {
+          "id": "skXcH3dVNduF0sds",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://quickchart.io/chart",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "=\n{{ $json.grafico.json.toJsonString() }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2240,
+        400
+      ],
+      "id": "1ba78ae0-90e9-4cc2-b80f-d19e6872a48c",
+      "name": "HTTP Request2"
+    },
+    {
+      "parameters": {
+        "operation": "sendPhoto",
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "binaryData": true,
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2464,
+        400
+      ],
+      "id": "9ee4366a-6fb9-4bcb-9ec5-343f43d016f0",
+      "name": "Send a photo message",
+      "webhookId": "16f2a512-b688-408c-90d4-fe4b5216b87f",
+      "credentials": {
+        "telegramApi": {
+          "id": "skXcH3dVNduF0sds",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pega o texto bruto (ajuste o nome do campo, por exemplo \"data\" ou \"response\")\nconst raw = $json[\"data\"] || $json[\"texto\"] || $json[\"output\"];\n\n// Garante que não tem espaços extras\nconst clean = raw.replace(/^```json/, \"\").replace(/```$/, \"\").replace(/\\*\\*/g, \"\").replace(/\\*/g, \"\").trim();\n\n// Faz o parse do texto bruto\nlet parsed;\ntry {\n  parsed = JSON.parse(clean);\n} catch (e) {\n  parsed = [{ json: { texto: \"Houve um erro ao processa o pedido por favor tente novamente.\", grafico: { exist: false } } }] \n}\n\n// Retorna o objeto parseado\nreturn parsed;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1792,
+        144
+      ],
+      "id": "1d340333-76e5-4192-b3a5-89c96b1e0a8e",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "3e8c690d-f4e6-411c-9054-b93088f06628",
+              "leftValue": "={{ $json.grafico.exist }}",
+              "rightValue": "false",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        2016,
+        400
+      ],
+      "id": "4d17eaee-66be-42ca-9947-f93edb5dc2f2",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').isExecuted ? $('Telegram Trigger').item.json.message.chat.id : $json.body.chat_id }}",
+        "text": "={{ $json.texto || $json.body.texto}}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        2016,
+        -16
+      ],
+      "id": "4a758f81-813e-4521-8880-7d0ce9511b98",
+      "name": "Send a text message",
+      "webhookId": "04a72411-fa52-4212-9dc6-15bb748d4cd6",
+      "credentials": {
+        "telegramApi": {
+          "id": "skXcH3dVNduF0sds",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Telegram Trigger').item.json.message.chat.id }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        1280,
+        576
+      ],
+      "id": "7d257f65-e621-44ca-a63d-d2094c2c617d",
+      "name": "Simple Memory1"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://fastapi-n8n-hmzp.onrender.com/process_csv",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"fileId\": \"{{ $json.fileId }}\",\n  \"chatId\": \"{{ $('Telegram Trigger').item.json.message.chat.id }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1792,
+        -256
+      ],
+      "id": "effa3064-3e54-4aed-b599-db305081318b",
+      "name": "HTTP Request Process",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "f6385440-1091-4a71-9ec4-eda7164daf6a",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        1568,
+        -128
+      ],
+      "id": "b37a5d5b-5118-45ac-b83a-242f28afbb12",
+      "name": "Webhook",
+      "webhookId": "f6385440-1091-4a71-9ec4-eda7164daf6a"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Telegram Trigger').item.json.message.chat.id }}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        880,
+        368
+      ],
+      "id": "1f6bc1ea-bc87-4823-8036-a920b611a75c",
+      "name": "Simple Memory"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "151e0184-3a94-42d6-9996-135c5c392870",
+              "name": "texto",
+              "value": "=Por favor Envie um link de upload do google drive com um arquivo .csv",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        496,
+        -16
+      ],
+      "id": "d2372fb0-783e-460a-9e14-64d55d5dbab1",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://fastapi-n8n-hmzp.onrender.com/spreadsheets",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"fileId\": \"{{ $json.fileId }}\",\n  \"chatId\": \"{{ $('Telegram Trigger').item.json.message.chat.id }}\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        160,
+        224
+      ],
+      "id": "fad9b39a-efde-4aac-aee1-0f90c5f86703",
+      "name": "HTTP Request spreadsheets",
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "let text = $('Telegram Trigger').first().json.message.text || '';\nconst match = text.match(/[-\\w]{25,}/); // fileId sempre tem 25+ chars\ntext = text.replace(/https:\\/\\/drive\\.google\\.com\\/[^\\s]+/g, \"\").trim();\n// return [{ fileId: match ? match[0] : null }];\nreturn [{ json: { cleanedText: text, fileId: match ? match[0] : null } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -128,
+        224
+      ],
+      "id": "f7fa4724-d7a9-43a1-8a54-7f1abdfbdee4",
+      "name": "Code in spreadsheets"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Google Gemini Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Agente Quickchart",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Agente Banco de Dados",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query in Postgres": {
+      "ai_tool": [
+        [
+          {
+            "node": "Agente Banco de Dados",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Banco de Dados": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Quickchart": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Send a chat action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Code in spreadsheets",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request Process",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send a chat action": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request2": {
+      "main": [
+        [
+          {
+            "node": "Send a photo message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory1": {
+      "ai_memory": [
+        [
+          {
+            "node": "Agente Banco de Dados",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request Process": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in spreadsheets": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request spreadsheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request spreadsheets": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "7da571f9-fa46-4a1e-93e8-cb8c130cc3fa",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3283c76a7c05ee6ee28d86421838932efae4dd9c4e516bdc92d5f113d8fc552c"
+  },
+  "id": "DVPZazZaCvwiKYuh",
+  "tags": []
+}
