@@ -36,11 +36,6 @@ def receive_spreadsheet(request: SendFileRequest, background_tasks: BackgroundTa
     return {"status": "processing", "texto": "O arquivo está sendo processado em background. Você receberá uma notificação quando estiver pronto."}
 
 
-@app.post("/upload-csv-stream/")
-def upload_csv_stream(chat_id: str , file: UploadFile = File(...), ):
-    df = pd.read_csv(file.file)
-    return {"head": df.head().to_dict()}
-
 def process_spreadsheet(file_id: str, chat_id: str, chunksize: int = 50_000):
     engine = create_engine(os.getenv("POSTGRES_URI"))
 
