@@ -1,7 +1,7 @@
 import gdown
 import pandas as pd
 from sqlalchemy import create_engine
-from fastapi import FastAPI, BackgroundTasks, UploadFile, File
+from fastapi import FastAPI, BackgroundTasks
 from dotenv import load_dotenv
 from pydantic import BaseModel
 import os
